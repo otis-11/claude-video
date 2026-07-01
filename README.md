@@ -134,6 +134,7 @@ Captions cover the majority of public videos for free. The Whisper fallback only
 /watch https://www.tiktok.com/@user/video/123 summarize this
 /watch ~/Movies/screen-recording.mp4 when does the UI break?
 /watch https://vimeo.com/123 what tools does she mention?
+/watch https://www.instagram.com/reel/XXXX/ --cookies-from-browser chrome
 ```
 
 Focused on a specific section — denser frame budget, lower token cost:
@@ -151,13 +152,34 @@ Other knobs (passed to `scripts/watch.py`):
 - `--whisper groq|openai` — force a specific Whisper backend.
 - `--no-whisper` — disable transcription entirely; frames only.
 - `--out-dir DIR` — keep working files somewhere specific (default: auto-generated tmp dir).
+- `--cookies-from-browser BROWSER` — authenticate login-walled sites (X, Facebook, Instagram) with a browser you're signed into. e.g. `chrome`, `safari`, `firefox`, `edge`, `brave`.
+- `--cookies FILE` — authenticate with an exported Netscape-format `cookies.txt` instead of a browser.
+
+### X / Facebook / Instagram (logged-in platforms)
+
+`yt-dlp` supports these sites, but most of their videos are behind a sign-in wall, so a bare link often fails with "login required" / "content not available". Give `/watch` the cookies from a browser where you're **already logged into that site** and it downloads as you:
+
+```
+/watch https://www.instagram.com/reel/XXXX/ --cookies-from-browser chrome
+/watch <x-post-url> --cookies-from-browser "chrome:Profile 1"   # specific browser profile
+/watch <facebook-video-url> --cookies cookies.txt               # or an exported cookies.txt
+```
+
+To make it permanent (so plain `/watch <url>` works on these platforms with no flag), set it once in `~/.config/watch/.env`:
+
+```
+WATCH_COOKIES_FROM_BROWSER=chrome      # or: safari, firefox, edge, brave, …
+# WATCH_COOKIES_FILE=/path/to/cookies.txt   # alternative to a browser
+```
+
+Only point this at your own browser — the cookies authenticate as your account. `/watch` never logs in, posts, or changes anything; it only reuses your existing session to download a video you can already see. macOS Chrome/Brave may ask for your Keychain password the first time.
 
 ## Limits
 
 - **Best accuracy: under 10 minutes.** Past that the script prints a "sparse scan" warning — re-run focused on the part you actually care about with `--start`/`--end`.
 - **Hard caps: 2 fps, 100 frames.** Frame count drives token cost; the script enforces this even when the auto-fps math would imply higher.
 - **Whisper upload limit: 25 MB.** At mono 16 kHz that's about 50 minutes of audio. Longer videos need either captions or `--start`/`--end` to a smaller window.
-- **No private platforms.** This skill doesn't log into anything. Public URLs and local files only. If yt-dlp can't reach it without auth, neither can `/watch`.
+- **Login-walled platforms need your cookies.** Out of the box `/watch` is public-only. For X, Facebook, and Instagram videos that require a sign-in, pass `--cookies-from-browser <browser>` (or set `WATCH_COOKIES_FROM_BROWSER` in `~/.config/watch/.env`) so yt-dlp reuses your browser session. `/watch` still never logs in or posts — it only downloads what your account can already see. Truly private or region-locked videos your account can't access stay out of reach.
 
 ## Structure
 

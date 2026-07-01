@@ -50,7 +50,7 @@ Within a single session, you can skip Step 0 on follow-up `/watch` calls — onc
 
 ## When to use
 
-- User pastes a video URL (YouTube, Vimeo, X, TikTok, Twitch clip, most yt-dlp-supported sites) and asks about it.
+- User pastes a video URL (YouTube, Vimeo, X/Twitter, TikTok, Facebook, Instagram, Twitch clip, most yt-dlp-supported sites) and asks about it. Login-walled sites (X, Facebook, Instagram) usually need cookies — see "Logged-in platforms" under "How to invoke".
 - User points at a local video file (`.mp4`, `.mov`, `.mkv`, `.webm`, etc.) and asks about it.
 - User types `/watch <url-or-path> [question]`.
 
@@ -83,6 +83,33 @@ Optional flags:
 - `--out-dir DIR` — keep working files somewhere specific (default: an auto-generated tmp dir)
 - `--whisper groq|openai` — force a specific Whisper backend (default: prefer Groq if both keys exist)
 - `--no-whisper` — disable the Whisper fallback entirely (frames-only if no captions)
+- `--cookies-from-browser BROWSER` — authenticate with a logged-in browser for login-walled sites (X, Facebook, Instagram). e.g. `chrome`, `safari`, `firefox`, `edge`, `brave`; optional `:PROFILE` suffix. See "Logged-in platforms" below.
+- `--cookies FILE` — authenticate with an exported Netscape-format `cookies.txt` instead of a browser.
+
+### Logged-in platforms (X / Twitter, Facebook, Instagram)
+
+yt-dlp already *supports* these sites, so a fully public link may download with no extra setup. But most of their videos — Instagram reels/posts/stories, Facebook watch videos, and many X posts — are gated behind a login. Without credentials yt-dlp returns errors like "Requested content is not available", "login required", "rate-limit reached", or "Cannot parse data". The fix is to let yt-dlp reuse the cookies from a browser where the user is **already signed in** to that site.
+
+Two ways to provide cookies, resolved in this order (first hit wins): the `--cookies-from-browser` / `--cookies` flags above, then `WATCH_COOKIES_FROM_BROWSER` / `WATCH_COOKIES_FILE` in `~/.config/watch/.env`.
+
+**Recommended: set it once in the config so it applies to every run.** When a user wants X/Facebook/Instagram support, edit `~/.config/watch/.env` and set `WATCH_COOKIES_FROM_BROWSER` to the browser they're logged into the site with (e.g. `WATCH_COOKIES_FROM_BROWSER=chrome`). After that, plain `/watch <url>` works on those platforms with no flag. Per-run override is the `--cookies-from-browser` flag.
+
+```bash
+# One-off: pull cookies from Chrome for this download only
+python3 "${CLAUDE_SKILL_DIR}/scripts/watch.py" "https://www.instagram.com/reel/XXXX/" --cookies-from-browser chrome
+
+# A specific browser profile
+python3 "${CLAUDE_SKILL_DIR}/scripts/watch.py" "$X_POST_URL" --cookies-from-browser "chrome:Profile 1"
+
+# Use an exported cookies.txt instead of a browser
+python3 "${CLAUDE_SKILL_DIR}/scripts/watch.py" "$FB_VIDEO_URL" --cookies cookies.txt
+```
+
+Notes:
+- The user must be logged into the target site **in that browser**. Cookies authenticate as that account — only point it at the user's own browser.
+- Supported browsers: `brave`, `chrome`, `chromium`, `edge`, `firefox`, `opera`, `safari`, `vivaldi`, `whale`.
+- macOS Chrome/Brave may prompt for the Keychain password the first time cookies are read. Firefox/Safari generally don't.
+- Close the browser if Chrome/Brave reports a locked cookie database (it holds a lock while running).
 
 ### Focusing on a section (higher frame rate)
 
@@ -139,7 +166,9 @@ Both keys live in `~/.config/watch/.env`. The script prefers Groq when both are 
 - **Setup preflight failed** → run `python3 "${CLAUDE_SKILL_DIR}/scripts/setup.py"` (auto-installs ffmpeg/yt-dlp via brew on macOS, scaffolds the `.env`). For API key, ask the user via `AskUserQuestion` and write it to `~/.config/watch/.env`.
 - **No transcript available** → captions missing AND (no Whisper key OR Whisper API failed). Script prints a hint pointing to setup. Proceed frames-only and tell the user.
 - **Long video warning printed** → acknowledge it in your answer. Offer to re-run focused on a specific section via `--start`/`--end` rather than a sparse full-video scan.
-- **Download fails** → yt-dlp's error goes to stderr. If it's a login-required or region-locked video, tell the user plainly; do not keep retrying.
+- **Download fails** → yt-dlp's error goes to stderr.
+  - **Login-required / "content not available" / rate-limited (common on X, Facebook, Instagram)** → the video is behind a sign-in wall. Ask the user which browser they're logged into that site with, then re-run with `--cookies-from-browser <browser>` (or set `WATCH_COOKIES_FROM_BROWSER` in `~/.config/watch/.env` so it sticks). See "Logged-in platforms" above. Do not retry the same bare command.
+  - **Region-locked / genuinely private** → tell the user plainly; cookies won't help if their account also can't see it. Do not keep retrying.
 - **Whisper request fails** → the error is printed to stderr (likely: invalid key, rate limit, or 25 MB upload limit on a very long video). The report will say "none available" for transcript. You can retry with `--whisper openai` if Groq failed (or vice versa).
 
 ## Token efficiency
@@ -155,15 +184,16 @@ If you already watched a video this session and the user asks a follow-up, do **
 
 **What this skill does:**
 - Runs `yt-dlp` locally to download the video and pull native captions when the source supports them (public data; the request goes directly to whatever host the URL points at)
+- **Only when the user opts in** (via `--cookies-from-browser` / `--cookies`, or `WATCH_COOKIES_FROM_BROWSER` / `WATCH_COOKIES_FILE` in `~/.config/watch/.env`): reads cookies from the user's local browser or a cookies.txt file and passes them to yt-dlp so it can download login-walled videos (X, Facebook, Instagram) as the user's signed-in account. Cookies are read locally by yt-dlp and sent only to the video's own host — never to the Whisper APIs or anywhere else. No cookies are read unless one of these options is set.
 - Runs `ffmpeg` / `ffprobe` locally to extract frames as JPEGs and, when Whisper is needed, a mono 16 kHz audio clip
 - Sends the extracted audio clip to Groq's Whisper API (`api.groq.com/openai/v1/audio/transcriptions`) when `GROQ_API_KEY` is set (preferred — cheaper, faster)
 - Sends the extracted audio clip to OpenAI's audio transcription API (`api.openai.com/v1/audio/transcriptions`) when `OPENAI_API_KEY` is set and Groq is not, or when `--whisper openai` is forced
 - Writes the downloaded video, frames, audio, and an intermediate transcript to a working directory under the system temp dir (or `--out-dir` if specified) so Claude can `Read` them
-- Reads / creates `~/.config/watch/.env` (mode `0600`) to store the Whisper API key(s) and a `SETUP_COMPLETE` marker. As a fallback, also reads `.env` in the current working directory
+- Reads / creates `~/.config/watch/.env` (mode `0600`) to store the Whisper API key(s), a `SETUP_COMPLETE` marker, and optional cookie settings (`WATCH_COOKIES_FROM_BROWSER` / `WATCH_COOKIES_FILE`). As a fallback, also reads `.env` in the current working directory
 
 **What this skill does NOT do:**
 - Does not upload the video itself to any API — only the extracted audio goes out, and only when native captions are missing AND Whisper is not disabled with `--no-whisper`
-- Does not access any platform account (no login, no session cookies, no posting)
+- Does not log into or post to any platform. The only account interaction is read-only: when the user explicitly enables cookies (see above), yt-dlp reuses their existing browser session to *download* a video they can already see — it never creates a session, enters credentials, or writes anything to the account. With no cookie option set, no session cookies are touched at all.
 - Does not share API keys between providers (Groq key only goes to `api.groq.com`, OpenAI key only goes to `api.openai.com`)
 - Does not log, cache, or write API keys to stdout, stderr, or output files
 - Does not persist anything outside the working directory and `~/.config/watch/.env` — clean up the working directory when you're done (Step 5)

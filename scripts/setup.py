@@ -46,6 +46,25 @@ ENV_TEMPLATE = """# /watch API configuration
 
 GROQ_API_KEY=
 OPENAI_API_KEY=
+
+# --- Logged-in platforms: X / Twitter, Facebook, Instagram -------------------
+# yt-dlp can already reach these sites, but most of their videos (reels, posts,
+# private/age-gated clips) require you to be signed in. Point /watch at the
+# cookies from a browser where you're ALREADY logged into the site, and it will
+# download as you. Set ONE of the two options below (browser is easiest).
+#
+# Option A — read cookies straight from your browser. Set the browser name:
+#   chrome, safari, firefox, edge, brave, chromium, opera, vivaldi, whale
+#   (optionally add a profile, e.g. chrome:Default or firefox:work)
+# WATCH_COOKIES_FROM_BROWSER=chrome
+#
+# Option B — point at an exported Netscape-format cookies.txt file instead:
+# WATCH_COOKIES_FILE=/Users/you/cookies.txt
+#
+# Leave both blank for public-only mode (no login). macOS note: Chrome/Brave
+# may prompt for your Keychain password the first time cookies are read.
+WATCH_COOKIES_FROM_BROWSER=
+WATCH_COOKIES_FILE=
 """
 
 

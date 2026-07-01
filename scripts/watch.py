@@ -44,6 +44,27 @@ def main() -> int:
         default=None,
         help="Force a specific Whisper backend. Default: prefer Groq, fall back to OpenAI.",
     )
+    ap.add_argument(
+        "--cookies-from-browser",
+        type=str,
+        default=None,
+        metavar="BROWSER",
+        help=(
+            "Use cookies from a logged-in browser for login-walled sites "
+            "(X, Facebook, Instagram). e.g. chrome, safari, firefox, edge, brave. "
+            "Optional :PROFILE suffix. Defaults to WATCH_COOKIES_FROM_BROWSER in ~/.config/watch/.env."
+        ),
+    )
+    ap.add_argument(
+        "--cookies",
+        type=str,
+        default=None,
+        metavar="FILE",
+        help=(
+            "Path to a Netscape-format cookies.txt to authenticate downloads. "
+            "Defaults to WATCH_COOKIES_FILE in ~/.config/watch/.env."
+        ),
+    )
     args = ap.parse_args()
 
     max_frames = min(args.max_frames, 100)
@@ -59,7 +80,12 @@ def main() -> int:
         "[watch] downloading via yt-dlp…" if is_url(args.source) else "[watch] using local file…",
         file=sys.stderr,
     )
-    dl = download(args.source, work / "download")
+    dl = download(
+        args.source,
+        work / "download",
+        cookies_from_browser=args.cookies_from_browser,
+        cookies_file=args.cookies,
+    )
     video_path = dl["video_path"]
 
     meta = get_metadata(video_path)
